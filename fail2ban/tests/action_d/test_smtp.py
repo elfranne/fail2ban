@@ -32,6 +32,7 @@ from ..dummyjail import DummyJail
 
 from ..utils import CONFIG_DIR
 
+
 class TestSMTPServer(smtpd.SMTPServer):
 
 	def process_message(self, peer, mailfrom, rcpttos, data):
@@ -39,6 +40,7 @@ class TestSMTPServer(smtpd.SMTPServer):
 		self.mailfrom = mailfrom
 		self.rcpttos = rcpttos
 		self.data = data
+
 
 class SMTPActionTest(unittest.TestCase):
 
@@ -99,21 +101,21 @@ class SMTPActionTest(unittest.TestCase):
 		self.assertEqual(self.smtpd.rcpttos, ["root"])
 		subject = "Subject: [Fail2Ban] %s: banned %s" % (
 			self.jail.name, aInfo['ip'])
-		self.assertTrue(subject in self.smtpd.data.replace("\n", ""))
+		self.assertIn(subject, self.smtpd.data.replace("\n", ""))
 		self.assertTrue(
 			"%i attempts" % aInfo['failures'] in self.smtpd.data)
 
 		self.action.matches = "matches"
 		self.action.ban(aInfo)
-		self.assertTrue(aInfo['matches'] in self.smtpd.data)
+		self.assertIn(aInfo['matches'], self.smtpd.data)
 
 		self.action.matches = "ipjailmatches"
 		self.action.ban(aInfo)
-		self.assertTrue(aInfo['ipjailmatches'] in self.smtpd.data)
+		self.assertIn(aInfo['ipjailmatches'], self.smtpd.data)
 
 		self.action.matches = "ipmatches"
 		self.action.ban(aInfo)
-		self.assertTrue(aInfo['ipmatches'] in self.smtpd.data)
+		self.assertIn(aInfo['ipmatches'], self.smtpd.data)
 
 	def testOptions(self):
 		self.action.start()

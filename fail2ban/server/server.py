@@ -25,7 +25,12 @@ __copyright__ = "Copyright (c) 2004 Cyril Jaquier"
 __license__ = "GPL"
 
 from threading import Lock, RLock
-import logging, logging.handlers, sys, os, signal, stat
+import logging
+import logging.handlers
+import os
+import signal
+import stat
+import sys
 
 from .jails import Jails
 from .filter import FileFilter, JournalFilter
@@ -42,6 +47,7 @@ try:
 except ImportError:
 	# Dont print error here, as database may not even be used
 	Fail2BanDb = None
+
 
 class Server:
 	
@@ -61,11 +67,10 @@ class Server:
 			'FreeBSD': '/var/run/log',
 			'Linux': '/dev/log',
 		}
+		self.setSyslogSocket("auto")
 		# Set logging level
 		self.setLogLevel("INFO")
 		self.setLogTarget("STDOUT")
-		self.setSyslogSocket("auto")
-
 
 	def __sigTERMhandler(self, signum, frame):
 		logSys.debug("Caught signal %d. Exiting" % signum)
@@ -103,20 +108,20 @@ class Server:
 			pidFile = open(pidfile, 'w')
 			pidFile.write("%s\n" % os.getpid())
 			pidFile.close()
-		except IOError, e:
+		except IOError as e:
 			logSys.error("Unable to create PID file: %s" % e)
 		
 		# Start the communication
 		logSys.debug("Starting communication")
 		try:
 			self.__asyncServer.start(sock, force)
-		except AsyncServerException, e:
+		except AsyncServerException as e:
 			logSys.error("Could not start server: %s", e)
 		# Removes the PID file.
 		try:
 			logSys.debug("Remove PID file %s" % pidfile)
 			os.remove(pidfile)
-		except OSError, e:
+		except OSError as e:
 			logSys.error("Unable to remove PID file: %s" % e)
 		logSys.info("Exiting Fail2ban")
 	
@@ -139,7 +144,6 @@ class Server:
 		finally:
 			self.__loggingLock.release()
 
-	
 	def addJail(self, name, backend):
 		self.__jails.add(name, backend, self.__db)
 		if self.__db is not None:
@@ -208,7 +212,7 @@ class Server:
 		filter_ = self.__jails[name].filter
 		if isinstance(filter_, FileFilter):
 			return [m.getFileName()
-					for m in filter_.getLogPath()]
+					for m in filter_.getLogs()]
 		else: # pragma: systemd no cover
 			logSys.info("Jail %s is not a FileFilter instance" % name)
 			return []
@@ -233,13 +237,11 @@ class Server:
 	
 	def setLogEncoding(self, name, encoding):
 		filter_ = self.__jails[name].filter
-		if isinstance(filter_, FileFilter):
-			filter_.setLogEncoding(encoding)
+		filter_.setLogEncoding(encoding)
 	
 	def getLogEncoding(self, name):
 		filter_ = self.__jails[name].filter
-		if isinstance(filter_, FileFilter):
-			return filter_.getLogEncoding()
+		return filter_.getLogEncoding()
 	
 	def setFindTime(self, name, value):
 		self.__jails[name].filter.setFindTime(value)
@@ -494,24 +496,27 @@ class Server:
 			return "flushed"
 			
 	def setDatabase(self, filename):
-		if len(self.__jails) == 0:
-			if filename.lower() == "none":
-				self.__db = None
-			else:
-				if Fail2BanDb is not None:
-					self.__db = Fail2BanDb(filename)
-					self.__db.delAllJails()
-				else:
-					logSys.error(
-						"Unable to import fail2ban database module as sqlite "
-						"is not available.")
-		else:
+		# if not changed - nothing to do
+		if self.__db and self.__db.filename == filename:
+			return
+		if not self.__db and filename.lower() == 'none':
+			return
+		if len(self.__jails) != 0:
 			raise RuntimeError(
 				"Cannot change database when there are jails present")
+		if filename.lower() == "none":
+			self.__db = None
+		else:
+			if Fail2BanDb is not None:
+				self.__db = Fail2BanDb(filename)
+				self.__db.delAllJails()
+			else:
+				logSys.error(
+					"Unable to import fail2ban database module as sqlite "
+					"is not available.")
 	
 	def getDatabase(self):
 		return self.__db
-	
 
 	def __createDaemon(self): # pragma: no cover
 		""" Detach a process from the controlling terminal and run it in the
@@ -536,7 +541,7 @@ class Server:
 			# the child gets a new PID, making it impossible for its PID to equal its
 			# PGID.
 			pid = os.fork()
-		except OSError, e:
+		except OSError as e:
 			return((e.errno, e.strerror))	 # ERROR (return a tuple)
 		
 		if pid == 0:	   # The first child.
@@ -557,7 +562,7 @@ class Server:
 				# fork guarantees that the child is no longer a session leader, thus
 				# preventing the daemon from ever acquiring a controlling terminal.
 				pid = os.fork()		# Fork a second child.
-			except OSError, e:
+			except OSError as e:
 				return((e.errno, e.strerror))  # ERROR (return a tuple)
 		
 			if (pid == 0):	  # The second child.

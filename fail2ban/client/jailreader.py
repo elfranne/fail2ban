@@ -24,16 +24,21 @@ __author__ = "Cyril Jaquier"
 __copyright__ = "Copyright (c) 2004 Cyril Jaquier"
 __license__ = "GPL"
 
-import re, glob, os.path
+import glob
 import json
+import os.path
+import re
 
 from .configreader import ConfigReaderUnshared, ConfigReader
 from .filterreader import FilterReader
 from .actionreader import ActionReader
+from ..version import version
 from ..helpers import getLogger
+from ..helpers import splitwords
 
 # Gets the instance of the logger.
 logSys = getLogger(__name__)
+
 
 class JailReader(ConfigReader):
 	
@@ -104,6 +109,10 @@ class JailReader(ConfigReader):
 				["string", "filter", ""],
 				["string", "action", ""]]
 
+		# Before interpolation (substitution) add static options always available as default:
+		defsec = self._cfg.get_defaults()
+		defsec["fail2ban_version"] = version
+
 		# Read first options only needed for merge defaults ('known/...' from filter):
 		self.__opts = ConfigReader.getOptions(self, self.__name, opts1st)
 		if not self.__opts:
@@ -162,7 +171,7 @@ class JailReader(ConfigReader):
 							self.__actions.append(action)
 						else:
 							raise AttributeError("Unable to read action")
-				except Exception, e:
+				except Exception as e:
 					logSys.error("Error in action definition " + act)
 					logSys.debug("Caught exception: %s" % (e,))
 					return False
@@ -183,7 +192,7 @@ class JailReader(ConfigReader):
 		stream = []
 		for opt in self.__opts:
 			if opt == "logpath" and	\
-					self.__opts.get('backend', None) != "systemd":
+					not self.__opts.get('backend', None).startswith("systemd"):
 				found_files = 0
 				for path in self.__opts[opt].split("\n"):
 					path = path.rsplit(" ", 1)
@@ -205,10 +214,8 @@ class JailReader(ConfigReader):
 			elif opt == "maxretry":
 				stream.append(["set", self.__name, "maxretry", self.__opts[opt]])
 			elif opt == "ignoreip":
-				for ip in self.__opts[opt].split():
-					# Do not send a command if the rule is empty.
-					if ip != '':
-						stream.append(["set", self.__name, "addignoreip", ip])
+				for ip in splitwords(self.__opts[opt]):
+					stream.append(["set", self.__name, "addignoreip", ip])
 			elif opt == "findtime":
 				stream.append(["set", self.__name, "findtime", self.__opts[opt]])
 			elif opt == "bantime":

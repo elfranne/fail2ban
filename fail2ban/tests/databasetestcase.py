@@ -42,17 +42,16 @@ from .utils import LogCaptureTestCase
 
 TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), "files")
 
+
 class DatabaseTest(LogCaptureTestCase):
 
 	def setUp(self):
 		"""Call before every test case."""
 		super(DatabaseTest, self).setUp()
-		if Fail2BanDb is None and sys.version_info >= (2,7): # pragma: no cover
+		if Fail2BanDb is None: # pragma: no cover
 			raise unittest.SkipTest(
 				"Unable to import fail2ban database module as sqlite is not "
 				"available.")
-		elif Fail2BanDb is None:
-			return
 		_, self.dbFilename = tempfile.mkstemp(".db", "fail2ban_")
 		self.db = Fail2BanDb(self.dbFilename)
 
@@ -122,7 +121,7 @@ class DatabaseTest(LogCaptureTestCase):
 
 		self.db.addLog(self.jail, self.fileContainer)
 
-		self.assertTrue(filename in self.db.getLogPaths(self.jail))
+		self.assertIn(filename, self.db.getLogPaths(self.jail))
 		os.remove(filename)
 
 	def testUpdateLog(self):
@@ -211,7 +210,7 @@ class DatabaseTest(LogCaptureTestCase):
 	def testDelBan(self):
 		self.testAddBan()
 		ticket = self.db.getBans(jail=self.jail)[0]
-		self.db.delBan(self.jail, ticket)
+		self.db.delBan(self.jail, ticket.getIP())
 		self.assertEqual(len(self.db.getBans(jail=self.jail)), 0)
 
 	def testGetBansWithTime(self):
@@ -305,7 +304,7 @@ class DatabaseTest(LogCaptureTestCase):
 	def testActionWithDB(self):
 		# test action together with database functionality
 		self.testAddJail() # Jail required
-		self.jail.database = self.db;
+		self.jail.database = self.db
 		actions = Actions(self.jail)
 		actions.add(
 			"action_checkainfo",
@@ -315,8 +314,26 @@ class DatabaseTest(LogCaptureTestCase):
 		ticket.setAttempt(5)
 		self.jail.putFailTicket(ticket)
 		actions._Actions__checkBan()
-		self.assertTrue(self._is_logged("ban ainfo %s, %s, %s, %s" % (True, True, True, True)))
+		self.assertLogged("ban ainfo %s, %s, %s, %s" % (True, True, True, True))
 
+	def testDelAndAddJail(self):
+		self.testAddJail() # Add jail
+		# Delete jail (just disabled it):
+		self.db.delJail(self.jail)
+		jails = self.db.getJailNames()
+		self.assertIn(len(jails) == 1 and self.jail.name, jails)
+		jails = self.db.getJailNames(enabled=False)
+		self.assertIn(len(jails) == 1 and self.jail.name, jails)
+		jails = self.db.getJailNames(enabled=True)
+		self.assertTrue(len(jails) == 0)
+		# Add it again - should just enable it:
+		self.db.addJail(self.jail)
+		jails = self.db.getJailNames()
+		self.assertIn(len(jails) == 1 and self.jail.name, jails)
+		jails = self.db.getJailNames(enabled=True)
+		self.assertIn(len(jails) == 1 and self.jail.name, jails)
+		jails = self.db.getJailNames(enabled=False)
+		self.assertTrue(len(jails) == 0)
 
 	def testPurge(self):
 		if Fail2BanDb is None: # pragma: no cover

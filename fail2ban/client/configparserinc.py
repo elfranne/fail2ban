@@ -24,7 +24,8 @@ __author__ = 'Yaroslav Halhenko'
 __copyright__ = 'Copyright (c) 2007 Yaroslav Halchenko'
 __license__ = 'GPL'
 
-import os, sys
+import os
+import sys
 from ..helpers import getLogger
 
 if sys.version_info >= (3,2): # pragma: no cover
@@ -65,6 +66,7 @@ logSys = getLogger(__name__)
 logLevel = 7
 
 __all__ = ['SafeConfigParserWithIncludes']
+
 
 class SafeConfigParserWithIncludes(SafeConfigParser):
 	"""
@@ -166,7 +168,7 @@ after = 1.conf
 			parser, i = self._getSharedSCPWI(resource)
 			if not i:
 				return []
-		except UnicodeDecodeError, e:
+		except UnicodeDecodeError as e:
 			logSys.error("Error decoding config file '%s': %s" % (resource, e))
 			return []
 		

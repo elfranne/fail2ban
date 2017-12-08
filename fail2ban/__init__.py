@@ -34,8 +34,11 @@ Below derived from:
 	https://mail.python.org/pipermail/tutor/2007-August/056243.html
 """
 
+logging.MSG = logging.INFO - 2
 logging.NOTICE = logging.INFO + 5
+logging.addLevelName(logging.MSG, 'MSG')
 logging.addLevelName(logging.NOTICE, 'NOTICE')
+
 
 # define a new logger function for notice
 # this is exactly like existing info, critical, debug...etc
@@ -52,6 +55,7 @@ def _Logger_notice(self, msg, *args, **kwargs):
 		self._log(logging.NOTICE, msg, args, **kwargs)
 
 logging.Logger.notice = _Logger_notice
+
 
 # define a new root level notice function
 # this is exactly like existing info, critical, debug...etc

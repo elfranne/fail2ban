@@ -21,11 +21,12 @@ __author__ = "Steven Hiscocks"
 __copyright__ = "Copyright (c) 2013 Steven Hiscocks"
 __license__ = "GPL"
 
-import sys
-import shutil, time
-import sqlite3
 import json
 import locale
+import shutil
+import sqlite3
+import sys
+import time
 from functools import wraps
 from threading import RLock
 
@@ -41,15 +42,16 @@ if sys.version_info >= (3,):
 		try:
 			x = json.dumps(x, ensure_ascii=False).encode(
 				locale.getpreferredencoding(), 'replace')
-		except Exception, e: # pragma: no cover
+		except Exception as e: # pragma: no cover
 			logSys.error('json dumps failed: %s', e)
 			x = '{}'
 		return x
+
 	def _json_loads_safe(x):
 		try:
 			x = json.loads(x.decode(
 				locale.getpreferredencoding(), 'replace'))
-		except Exception, e: # pragma: no cover
+		except Exception as e: # pragma: no cover
 			logSys.error('json loads failed: %s', e)
 			x = {}
 		return x
@@ -63,25 +65,28 @@ else:
 			return x.encode(locale.getpreferredencoding())
 		else:
 			return x
+
 	def _json_dumps_safe(x):
 		try:
 			x = json.dumps(_normalize(x), ensure_ascii=False).decode(
 				locale.getpreferredencoding(), 'replace')
-		except Exception, e: # pragma: no cover
+		except Exception as e: # pragma: no cover
 			logSys.error('json dumps failed: %s', e)
 			x = '{}'
 		return x
+
 	def _json_loads_safe(x):
 		try:
 			x = _normalize(json.loads(x.decode(
 				locale.getpreferredencoding(), 'replace')))
-		except Exception, e: # pragma: no cover
+		except Exception as e: # pragma: no cover
 			logSys.error('json loads failed: %s', e)
 			x = {}
 		return x
 
 sqlite3.register_adapter(dict, _json_dumps_safe)
 sqlite3.register_converter("JSON", _json_loads_safe)
+
 
 def commitandrollback(f):
 	@wraps(f)
@@ -90,6 +95,7 @@ def commitandrollback(f):
 			with self._db: # Auto commit and rollback on exception
 				return f(self, self._db.cursor(), *args, **kwargs)
 	return wrapper
+
 
 class Fail2BanDb(object):
 	"""Fail2Ban database for storing persistent data.
@@ -155,6 +161,7 @@ class Fail2BanDb(object):
 			"CREATE INDEX bans_jail_ip ON bans(jail, ip);" \
 			"CREATE INDEX bans_ip ON bans(ip);" \
 
+
 	def __init__(self, filename, purgeAge=24*60*60):
 		try:
 			self._lock = RLock()
@@ -168,14 +175,29 @@ class Fail2BanDb(object):
 
 			logSys.info(
 				"Connected to fail2ban persistent database '%s'", filename)
-		except sqlite3.OperationalError, e:
+		except sqlite3.OperationalError as e:
 			logSys.error(
 				"Error connecting to fail2ban persistent database '%s': %s",
 				filename, e.args[0])
 			raise
 
+		# differentiate pypy: switch journal mode later (save it during the upgrade), 
+		# to prevent errors like "database table is locked":
+		try:
+			import __pypy__
+			pypy = True
+		except ImportError:
+			pypy = False
+
 		cur = self._db.cursor()
-		cur.execute("PRAGMA foreign_keys = ON;")
+		cur.execute("PRAGMA foreign_keys = ON")
+		# speedup: write data through OS without syncing (no wait):
+		cur.execute("PRAGMA synchronous = OFF")
+		# speedup: transaction log in memory, alternate using OFF (disable, rollback will be impossible):
+		if not pypy:
+			cur.execute("PRAGMA journal_mode = MEMORY")
+		# speedup: temporary tables and indices are kept in memory:
+		cur.execute("PRAGMA temp_store = MEMORY")
 
 		try:
 			cur.execute("SELECT version FROM fail2banDb LIMIT 1")
@@ -195,6 +217,9 @@ class Fail2BanDb(object):
 						Fail2BanDb.__version__, version, newversion)
 					raise RuntimeError('Failed to fully update')
 		finally:
+			# pypy: set journal mode after possible upgrade db:
+			if pypy:
+				cur.execute("PRAGMA journal_mode = MEMORY")
 			cur.close()
 
 	@property
@@ -237,12 +262,13 @@ class Fail2BanDb(object):
 
 		A timestamped backup is also created prior to attempting the update.
 		"""
-		self._dbBackupFilename = self.filename + '.' + time.strftime('%Y%m%d-%H%M%S', MyTime.gmtime())
-		shutil.copyfile(self.filename, self._dbBackupFilename)
-		logSys.info("Database backup created: %s", self._dbBackupFilename)
 		if version > Fail2BanDb.__version__:
 			raise NotImplementedError(
 						"Attempt to travel to future version of database ...how did you get here??")
+
+		self._dbBackupFilename = self.filename + '.' + time.strftime('%Y%m%d-%H%M%S', MyTime.gmtime())
+		shutil.copyfile(self.filename, self._dbBackupFilename)
+		logSys.info("Database backup created: %s", self._dbBackupFilename)
 
 		if version < 2:
 			cur.executescript("BEGIN TRANSACTION;"
@@ -267,8 +293,12 @@ class Fail2BanDb(object):
 			Jail to be added to the database.
 		"""
 		cur.execute(
-			"INSERT OR REPLACE INTO jails(name, enabled) VALUES(?, 1)",
+			"INSERT OR IGNORE INTO jails(name, enabled) VALUES(?, 1)",
 			(jail.name,))
+		if cur.rowcount <= 0:
+			cur.execute(
+				"UPDATE jails SET enabled = 1 WHERE name = ? AND enabled != 1",
+				(jail.name,))
 
 	@commitandrollback
 	def delJail(self, cur, jail):
@@ -291,7 +321,7 @@ class Fail2BanDb(object):
 		cur.execute("UPDATE jails SET enabled=0")
 
 	@commitandrollback
-	def getJailNames(self, cur):
+	def getJailNames(self, cur, enabled=None):
 		"""Get name of jails in database.
 
 		Currently only used for testing purposes.
@@ -301,7 +331,11 @@ class Fail2BanDb(object):
 		set
 			Set of jail names.
 		"""
-		cur.execute("SELECT name FROM jails")
+		if enabled is None:
+			cur.execute("SELECT name FROM jails")
+		else:
+			cur.execute("SELECT name FROM jails WHERE enabled=%s" %
+				(int(enabled),))
 		return set(row[0] for row in cur.fetchmany())
 
 	@commitandrollback
@@ -411,19 +445,20 @@ class Fail2BanDb(object):
 				 "failures": ticket.getAttempt()}))
 
 	@commitandrollback
-	def delBan(self, cur, jail, ticket):
+	def delBan(self, cur, jail, ip):
 		"""Delete a ban from the database.
 
 		Parameters
 		----------
 		jail : Jail
 			Jail in which the ban has occurred.
-		ticket : BanTicket
-			Ticket of the ban to be removed.
+		ip : str
+			IP to be removed.
 		"""
+		queryArgs = (jail.name, ip);
 		cur.execute(
-			"DELETE FROM bans WHERE jail = ? AND ip = ? AND timeofban = ?",
-			(jail.name, ticket.getIP(), int(round(ticket.getTime()))))
+			"DELETE FROM bans WHERE jail = ? AND ip = ?", 
+			queryArgs);
 
 	@commitandrollback
 	def _getBans(self, cur, jail=None, bantime=None, ip=None):

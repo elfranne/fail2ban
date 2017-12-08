@@ -26,10 +26,12 @@ import traceback
 import re
 import logging
 
+
 def formatExceptionInfo():
 	""" Consistently format exception information """
 	cla, exc = sys.exc_info()[:2]
 	return (cla.__name__, str(exc))
+
 
 #
 # Following "traceback" functions are adopted from PyMVPA distributed
@@ -48,6 +50,7 @@ def mbasename(s):
 	if base in set(['base', '__init__']):
 		base = os.path.basename(os.path.dirname(s)) + '.' + base
 	return base
+
 
 class TraceBack(object):
 	"""Customized traceback to be included in debug messages
@@ -94,6 +97,7 @@ class TraceBack(object):
 
 		return sftb
 
+
 class FormatterWithTraceBack(logging.Formatter):
 	"""Custom formatter which expands %(tb) and %(tbc) with tracebacks
 
@@ -108,6 +112,7 @@ class FormatterWithTraceBack(logging.Formatter):
 		record.tbc = record.tb = self._tb()
 		return logging.Formatter.format(self, record)
 
+
 def getLogger(name):
 	"""Get logging.Logger instance with Fail2Ban logger name convention
 	"""
@@ -115,9 +120,20 @@ def getLogger(name):
 		name = "fail2ban.%s" % name.rpartition(".")[-1]
 	return logging.getLogger(name)
 
+
 def excepthook(exctype, value, traceback):
 	"""Except hook used to log unhandled exceptions to Fail2Ban log
 	"""
 	getLogger("fail2ban").critical(
 		"Unhandled exception in Fail2Ban:", exc_info=True)
 	return sys.__excepthook__(exctype, value, traceback)
+
+def splitwords(s):
+	"""Helper to split words on any comma, space, or a new line
+
+	Returns empty list if input is empty (or None) and filters
+	out empty entries
+	"""
+	if not s:
+		return []
+	return filter(bool, map(str.strip, re.split('[ ,\n]+', s)))
